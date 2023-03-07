@@ -548,3 +548,21 @@ class TestSyslogHandler:
         interval, burst = syslog_cfg.parse_syslog_conf()
         assert interval == '0'
         assert burst == '0'
+
+class TestDnsHandler:
+
+    @mock.patch('hostcfgd.run_cmd')
+    def test_dns_update(self, mock_run_cmd):
+        dns_cfg = hostcfgd.DnsCfg()
+        key = "1.1.1.1"
+        dns_cfg.dns_update(key, {})
+
+        mock_run_cmd.assert_has_calls([call('systemctl restart resolv-config', True, True)])
+
+    def test_load(self):
+        dns_cfg = hostcfgd.DnsCfg()
+        dns_cfg.dns_update = mock.MagicMock()
+
+        data = {}
+        dns_cfg.load(data)
+        dns_cfg.dns_update.assert_called()

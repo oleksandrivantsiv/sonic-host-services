@@ -1537,6 +1537,18 @@ class SyslogCfg:
         return interval, burst
 
 
+class DnsCfg:
+
+    def load(self, *args, **kwargs):
+        self.dns_update()
+
+    def dns_update(self, *args, **kwargs):
+        try:
+            run_cmd('systemctl restart resolv-config', True, True)
+        except subprocess.CalledProcessError:
+            syslog.syslog(syslog.LOG_ERR, 'Failed to restart resolv-config service')
+
+
 class HostConfigDaemon:
     def __init__(self):
         # Just a sanity check to verify if the CONFIG_DB has been initialized
@@ -1586,6 +1598,9 @@ class HostConfigDaemon:
         # Initialize SyslogCfg
         self.syslogcfg = SyslogCfg()
 
+        # Initialize DnsCfg
+        self.dnscfg = DnsCfg()
+
     def load(self, init_data):
         features = init_data['FEATURE']
         aaa = init_data['AAA']
@@ -1602,6 +1617,7 @@ class HostConfigDaemon:
         mgmt_ifc = init_data.get(swsscommon.CFG_MGMT_INTERFACE_TABLE_NAME, {})
         mgmt_vrf = init_data.get(swsscommon.CFG_MGMT_VRF_CONFIG_TABLE_NAME, {})
         syslog = init_data.get('SYSLOG_CONFIG', {})
+        dns = init_data.get('DNS_NAMESERVER', {})
 
         self.feature_handler.sync_state_field(features)
         self.aaacfg.load(aaa, tacacs_global, tacacs_server, radius_global, radius_server)
@@ -1612,6 +1628,7 @@ class HostConfigDaemon:
         self.devmetacfg.load(dev_meta)
         self.mgmtifacecfg.load(mgmt_ifc, mgmt_vrf)
         self.syslogcfg.load(syslog)
+        self.dnscfg.load(dns)
 
         # Update AAA with the hostname
         self.aaacfg.hostname_update(self.devmetacfg.hostname)
@@ -1712,7 +1729,11 @@ class HostConfigDaemon:
         self.devmetacfg.hostname_update(data)
 
     def syslog_handler(self, key, op, data):
-        self.syslogcfg.syslog_update(data)
+        self.syslogcfg.syslog_update(key, data)
+
+    def dns_nameserver_handler(self, key, op, data):
+        syslog.syslog(syslog.LOG_INFO, 'DNS nameserver handler...')
+        self.dnscfg.dns_update(key, data)
 
     def wait_till_system_init_done(self):
         # No need to print the output in the log file so using the "--quiet"
@@ -1762,6 +1783,7 @@ class HostConfigDaemon:
                                  make_callback(self.mgmt_vrf_handler))
 
         self.config_db.subscribe('SYSLOG_CONFIG', make_callback(self.syslog_handler))
+        self.config_db.subscribe('DNS_NAMESERVER', make_callback(self.dns_nameserver_handler))
 
         syslog.syslog(syslog.LOG_INFO,
                       "Waiting for systemctl to finish initialization")
